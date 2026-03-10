@@ -1,0 +1,20 @@
+app:
+  scoring:
+    weights:
+      position: 0.30
+      price: 0.25
+      age: 0.20
+      experience: 0.15
+      competition: 0.10
+    thresholds:
+      must-have: 85
+      very-good: 75
+      solid: 65
+      average: 55
+      risky: 45
+  club:
+    min-transfers-for-score: 5
+    default-league: "Serie A"
+  logging:
+    include-timestamp: true
+    include-player-details: false
