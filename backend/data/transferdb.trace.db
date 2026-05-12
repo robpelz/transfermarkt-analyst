@@ -1,0 +1,13 @@
+2026-05-07 18:05:30.945372+02:00 jdbc[13]: exception
+org.h2.jdbc.JdbcSQLSyntaxErrorException: Syntax Fehler in SQL Befehl "CREATE TABLE IF NOT EXISTS scouting (\000d\000a    id BIGINT AUTO_INCREMENT PRIMARY KEY,\000d\000a    player_id VARCHAR(50) NOT NULL,\000d\000a    player_name VARCHAR(200),\000d\000a    rating INT CHECK (rating BETWEEN 1 AND 5),\000d\000a    note VARCHAR(500),\000d\000a    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\000d\000a    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\000d\000a    UNIQUE [*]KEY uk_player (player_id)\000d\000a)"; erwartet "NULLS, ("
+Syntax error in SQL statement "CREATE TABLE IF NOT EXISTS scouting (\000d\000a    id BIGINT AUTO_INCREMENT PRIMARY KEY,\000d\000a    player_id VARCHAR(50) NOT NULL,\000d\000a    player_name VARCHAR(200),\000d\000a    rating INT CHECK (rating BETWEEN 1 AND 5),\000d\000a    note VARCHAR(500),\000d\000a    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\000d\000a    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\000d\000a    UNIQUE [*]KEY uk_player (player_id)\000d\000a)"; expected "NULLS, ("; SQL statement:
+CREATE TABLE IF NOT EXISTS scouting (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    player_id VARCHAR(50) NOT NULL,
+    player_name VARCHAR(200),
+    rating INT CHECK (rating BETWEEN 1 AND 5),
+    note VARCHAR(500),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_player (player_id)
+) [42001-232]
