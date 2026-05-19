@@ -31,3 +31,21 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Datenbank (H2 File)
+data/
+*.db
+*.mv.db
+*.trace.db
+
+# Backend (generierte Dateien)
+backend/transfermarkt-analyst/target/
+backend/transfermarkt-analyst/data/
+
+# Frontend (node_modules)
+frontend/node_modules/
+frontend/dist/
+
+# CSV-Dateien (zu groß)
+*.csv
+football-datasets/
