@@ -49,6 +49,16 @@ public class SoFifaController {
         return ResponseEntity.ok(available ? "✅ CRSet verbunden" : "❌ CRSet nicht erreichbar");
     }
 
+    private String formatMarketValue(Long valueInEuro) {
+        if (valueInEuro == null) return "?";
+        double valueInMio = valueInEuro / 1_000_000.0;
+        if (valueInMio >= 1000) {
+            return String.format("%.0f Mrd €", valueInMio / 1000);
+        } else {
+            return String.format("%.0f Mio €", valueInMio);
+        }
+    }
+
     @GetMapping("/full-search")
     public ResponseEntity<List<Map<String, Object>>> fullSearch(@RequestParam String query) {
         log.info("🔍 Full-Suche nach: {}", query);
@@ -59,15 +69,14 @@ public class SoFifaController {
             List<Map<String, Object>> results = jdbcTemplate.queryForList(sql, "%" + query + "%");
 
             for (Map<String, Object> row : results) {
-                // FIX: Integer zu String konvertieren
                 String playerId = String.valueOf(row.get("player_id"));
 
-                String marketValueSql = "SELECT wert FROM PLAYER_MARKET_VALUES WHERE player_id = ? ORDER BY date_unix DESC LIMIT 1";
+                String marketValueSql = "SELECT value FROM player_market_value WHERE player_id = ? ORDER BY date_unix DESC LIMIT 1";
                 try {
                     String marketValue = jdbcTemplate.queryForObject(marketValueSql, String.class, playerId);
                     if (marketValue != null) {
-                        marketValue = marketValue.replaceAll("\\.0$", "") + " €";
-                        row.put("market_value", marketValue);
+                        Long valueLong = Long.parseLong(marketValue.replaceAll("\\.0$", ""));
+                        row.put("market_value", formatMarketValue(valueLong));
                     } else {
                         row.put("market_value", "?");
                     }
@@ -110,6 +119,21 @@ public class SoFifaController {
         response.put("nationality", player.getNationality());
         response.put("position", player.getPositions().get(0));
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/player/{id}/market-value")
+    public ResponseEntity<Map<String, String>> getPlayerMarketValue(@PathVariable String id) {
+        String sql = "SELECT value FROM player_market_value WHERE player_id = ? ORDER BY date_unix DESC LIMIT 1";
+        try {
+            String value = jdbcTemplate.queryForObject(sql, String.class, id);
+            if (value != null) {
+                Long valueLong = Long.parseLong(value.replaceAll("\\.0$", ""));
+                double valueInMio = valueLong / 1_000_000.0;
+                String formatted = valueInMio >= 1000 ? String.format("%.0f Mrd €", valueInMio / 1000) : String.format("%.0f Mio €", valueInMio);
+                return ResponseEntity.ok(Map.of("market_value", formatted));
+            }
+        } catch (Exception e) {}
+        return ResponseEntity.ok(Map.of("market_value", "?"));
     }
 
     @GetMapping("/compare")
@@ -192,8 +216,6 @@ public class SoFifaController {
         return "❌ Zu riskant – lieber nicht";
     }
 
-    // ==================== FEHLERNDE ENDPUNKTE ====================
-
     @GetMapping("/player/name/{name}")
     public ResponseEntity<SoFifaPlayer> getPlayerByName(@PathVariable String name) {
         List<SoFifaPlayer> players = databasePlayerService.searchPlayers(name);
@@ -227,7 +249,7 @@ public class SoFifaController {
 
     @GetMapping("/{clubId}/players")
     public ResponseEntity<List<Map<String, Object>>> getClubPlayers(@PathVariable String clubId) {
-        String sql = "SELECT p.player_id as id, p.player_name as name, p.position, p.date_of_birth, p.citizenship as nationality, (SELECT wert FROM PLAYER_MARKET_VALUES mv WHERE mv.player_id = p.player_id ORDER BY mv.date_unix DESC LIMIT 1) as market_value FROM PLAYER_PROFILES p WHERE p.current_club_id = ? ORDER BY p.player_name LIMIT 50";
+        String sql = "SELECT p.player_id as id, p.player_name as name, p.position, p.date_of_birth, p.citizenship as nationality, (SELECT value FROM player_market_value mv WHERE CAST(mv.player_id AS TEXT) = p.player_id ORDER BY mv.date_unix DESC LIMIT 1) as market_value FROM player_profiles p WHERE p.current_club_id = ? ORDER BY p.player_name LIMIT 50";
         try {
             List<Map<String, Object>> players = jdbcTemplate.queryForList(sql, clubId);
             for (Map<String, Object> player : players) {
@@ -240,10 +262,18 @@ public class SoFifaController {
                     } catch (Exception e) { player.put("age", 0); }
                 } else { player.put("age", 0); }
                 player.remove("date_of_birth");
+
                 Object mvObj = player.get("market_value");
                 if (mvObj != null && !mvObj.toString().isEmpty()) {
-                    player.put("market_value", mvObj.toString().replaceAll("\\.0$", "") + " €");
-                } else { player.put("market_value", "?"); }
+                    try {
+                        Long valueLong = Long.parseLong(mvObj.toString().replaceAll("\\.0$", ""));
+                        player.put("market_value", formatMarketValue(valueLong));
+                    } catch (Exception e) {
+                        player.put("market_value", "?");
+                    }
+                } else {
+                    player.put("market_value", "?");
+                }
             }
             return ResponseEntity.ok(players);
         } catch (Exception e) {
