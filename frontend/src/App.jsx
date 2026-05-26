@@ -6,6 +6,7 @@ import PlayerDetail from './components/players/PlayerDetail';
 import ClubList from './components/clubs/ClubList';
 import PlayerCompare from './components/compare/PlayerCompare';
 import ScoutingList from './components/scouting/ScoutingList';
+import ClubDetail from './components/clubs/ClubDetail';
 
 function App() {
   return (
@@ -18,6 +19,8 @@ function App() {
           <Route path="clubs" element={<ClubList />} />
           <Route path="analytics" element={<PlayerCompare />} />
           <Route path="scouting" element={<ScoutingList />} />
+          <Route path="clubs/:id" element={<ClubDetail />} />
+
         </Route>
         
       </Routes>

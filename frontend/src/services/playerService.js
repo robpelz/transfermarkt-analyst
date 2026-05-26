@@ -1,40 +1,37 @@
+// playerService.js
 import api from './api';
 
 const playerService = {
   searchPlayers: async (query) => {
     try {
       const response = await api.get(`/sofifa/full-search?query=${encodeURIComponent(query)}`, {
-        timeout: 15000
+        timeout: 30000
       });
       
-      const transformedData = response.data.map(player => ({
-        id: player.PLAYER_ID,
-        name: player.PLAYER_NAME,
-        position: player.POSITION,
-        nationality: player.CITIZENSHIP,
-        club: player.CURRENT_CLUB_NAME,
-        value: player.market_value,
-        age: player.age,
+      console.log('API Response:', response.data);
+      
+      return response.data.map(player => ({
+        id: player.player_id,
+        name: player.player_name,
+        position: player.position,
+        nationality: player.citizenship,
+        club: player.current_club_name,
+        value: player.market_value || player.wert || '?',
+        age: player.age || '?',
         imageUrl: null
       }));
-      
-      return transformedData;
     } catch (error) {
       console.error('❌ Fehler:', error);
       return [];
     }
   },
 
-  getSuggestions: async () => {
-    const topPlayers = ['Wirtz', 'Musiala', 'Bellingham', 'Haaland', 'Kane'];
-    const results = [];
-    for (const name of topPlayers) {
-      const players = await playerService.searchPlayers(name);
-      if (players && players.length > 0) {
-        results.push(players[0]);
-      }
-    }
-    return results;
+  getRandomPlayers: async () => {
+    const randomNames = ['Wirtz', 'Haaland', 'Musiala', 'Bellingham', 'Kane', 'Saka', 'Pedri', 'Mbappé'];
+    const players = await Promise.all(
+      randomNames.map(name => playerService.searchPlayers(name))
+    );
+    return players.filter(p => p.length > 0).map(p => p[0]).slice(0, 8);
   },
 
   getById: async (id) => {

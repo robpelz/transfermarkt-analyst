@@ -1,0 +1,14 @@
+services:
+  backend:
+    build: ./transfermarkt-analyst
+    ports:
+      - "8080:8080"
+    container_name: transfermarkt-backend
+
+  frontend:
+    build: ../frontend
+    ports:
+      - "5173:80"
+    container_name: transfermarkt-frontend
+    depends_on:
+      - backend
