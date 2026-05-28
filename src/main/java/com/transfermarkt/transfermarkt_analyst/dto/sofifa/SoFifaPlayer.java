@@ -91,21 +91,28 @@ public class SoFifaPlayer {
 
     /**
      * Konvertiert Wert-String (z.B. "€101M") in Millionen Euro
-     * @return Marktwert in Millionen Euro
+     * @return Marktwert in Millionen Euro, oder 0 wenn nicht parsbar
      */
     public double getValueInMillion() {
-        if (value == null || value.isEmpty()) return 0;
+        if (value == null || value.isEmpty() || value.equals("?")) {
+            return 0;
+        }
 
-        String clean = value.replace("€", "").replace(",", ".").trim();
+        try {
+            String clean = value.replace("€", "").replace(",", ".").trim();
 
-        if (clean.contains("M")) {
-            clean = clean.replace("M", "");
-            return Double.parseDouble(clean);
-        } else if (clean.contains("K")) {
-            clean = clean.replace("K", "");
-            return Double.parseDouble(clean) / 1000.0;
-        } else {
-            return Double.parseDouble(clean) / 1_000_000.0;
+            if (clean.contains("M")) {
+                clean = clean.replace("M", "").trim();
+                return Double.parseDouble(clean);
+            } else if (clean.contains("K")) {
+                clean = clean.replace("K", "").trim();
+                return Double.parseDouble(clean) / 1000.0;
+            } else {
+                return Double.parseDouble(clean) / 1_000_000.0;
+            }
+        } catch (NumberFormatException e) {
+            // Logging optional, aber nicht notwendig
+            return 0;
         }
     }
 

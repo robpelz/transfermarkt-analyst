@@ -1,7 +1,9 @@
 package com.transfermarkt.transfermarkt_analyst.service;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
@@ -14,15 +16,18 @@ public class CsvImportService {
 
     private final JdbcTemplate jdbcTemplate;
 
+    @Value("${import.data.directory:src/main/resources}")
+    private String dataDirectory;
+
     public CsvImportService(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 
     /**
-     * Importiert die Premier League (wo Wirtz, Kane, Haaland sind)
+     * Importiert die Premier League
      */
     public void importPremierLeague() {
-        String filepath = "C:/Users/49152/Desktop/java/transfermarkt-analyst/backend/transfermarkt-analyst/src/main/resources/premier_league_2025.csv";
+        String filepath = dataDirectory + "/premier_league_2025.csv";
         importLeague(filepath, "Premier League");
     }
 
@@ -33,28 +38,40 @@ public class CsvImportService {
         System.out.println("📥 Starte Import aller Ligen...");
 
         importPremierLeague();
-        importLeague("C:/Users/49152/Desktop/java/transfermarkt-analyst/backend/transfermarkt-analyst/src/main/resources/bundesliga_2025.csv", "Bundesliga");
-        importLeague("C:/Users/49152/Desktop/java/transfermarkt-analyst/backend/transfermarkt-analyst/src/main/resources/laliga_2025.csv", "La Liga");
-        importLeague("C:/Users/49152/Desktop/java/transfermarkt-analyst/backend/transfermarkt-analyst/src/main/resources/serie_a_2025.csv", "Serie A");
-        importLeague("C:/Users/49152/Desktop/java/transfermarkt-analyst/backend/transfermarkt-analyst/src/main/resources/ligue_1_2025.csv", "Ligue 1");
+        importLeague(dataDirectory + "/bundesliga_2025.csv", "Bundesliga");
+        importLeague(dataDirectory + "/laliga_2025.csv", "La Liga");
+        importLeague(dataDirectory + "/serie_a_2025.csv", "Serie A");
+        importLeague(dataDirectory + "/ligue_1_2025.csv", "Ligue 1");
 
         System.out.println("✅ Alle Ligen importiert!");
     }
 
     /**
-     * Importiert eine einzelne CSV-Datei mit Batch-Insert (kein Timeout!)
+     * Öffentliche Methode für Tests - importiert eine einzelne CSV-Datei
+     * @param filepath Pfad zur CSV-Datei
+     * @param leagueName Name der Liga
+     * @return Anzahl der importierten Zeilen
      */
-    private void importLeague(String filepath, String leagueName) {
+    public int importLeagueFromFile(String filepath, String leagueName) {
+        return importLeague(filepath, leagueName);
+    }
 
-            System.out.println("📂 Versuche zu lesen: " + filepath);
+    /**
+     * Importiert eine einzelne CSV-Datei mit Batch-Insert
+     * @param filepath Pfad zur CSV-Datei
+     * @param leagueName Name der Liga
+     * @return Anzahl der importierten Zeilen
+     */
+    private int importLeague(String filepath, String leagueName) {
+        System.out.println("📂 Versuche zu lesen: " + filepath);
 
-            // Prüfe ob Datei existiert
-            File file = new File(filepath);
-            if (!file.exists()) {
-                System.err.println("❌ Datei nicht gefunden: " + filepath);
-                return;
-            }
-            System.out.println("✅ Datei gefunden, Größe: " + file.length() + " bytes");
+        // Prüfe ob Datei existiert
+        File file = new File(filepath);
+        if (!file.exists()) {
+            System.err.println("❌ Datei nicht gefunden: " + filepath);
+            return 0;
+        }
+        System.out.println("✅ Datei gefunden, Größe: " + file.length() + " bytes");
 
         List<Object[]> batchArgs = new ArrayList<>();
         int batchSize = 1000;
@@ -112,10 +129,12 @@ public class CsvImportService {
             }
 
             System.out.println("✅ " + leagueName + ": " + totalCount + " Spieler importiert");
+            return totalCount;
 
         } catch (IOException e) {
             System.err.println("❌ Fehler beim Import von " + leagueName + ": " + e.getMessage());
             e.printStackTrace();
+            return 0;
         }
     }
 
@@ -134,7 +153,7 @@ public class CsvImportService {
     /**
      * Bereinigt einen String
      */
-    private String clean(String s) {
+    String clean(String s) {
         if (s == null || s.isEmpty()) return null;
         return s.replace("\"", "").trim();
     }
@@ -142,7 +161,7 @@ public class CsvImportService {
     /**
      * Parst Integer sicher
      */
-    private Integer parseInt(String s) {
+    Integer parseInt(String s) {
         if (s == null || s.isEmpty()) return null;
         try {
             return Integer.parseInt(clean(s));
@@ -154,12 +173,22 @@ public class CsvImportService {
     /**
      * Parst Double sicher
      */
-    private Double parseDouble(String s) {
+    Double parseDouble(String s) {
         if (s == null || s.isEmpty()) return null;
         try {
             return Double.parseDouble(clean(s));
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    /**
+     * Test-Hilfsmethode: Erstellt eine Test-CSV-Datei
+     * (Nur für Tests verwendet)
+     */
+    public static String createTestCsvContent() {
+        return "season,league,club,transfer_window,movement,player_name,player_id,age,nationality,position,pos_short,market_value,dealing_club,dealing_country,fee,is_loan\n" +
+                "2024,Bundesliga,Dortmund,Winter,Transfer,Moukoko,12345,18,Germany,Striker,ST,30000000,,,0,0\n" +
+                "2024,Bundesliga,Bayern,Summer,Transfer,Kane,54321,30,England,Striker,ST,100000000,,,0,0";
     }
 }

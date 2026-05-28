@@ -7,41 +7,20 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-/**
- * Service zur Berechnung des TransferScores.
- *
- * Diese Klasse ist nach dem Single-Responsibility-Prinzip nur für die Score-Berechnung zuständig.
- * Sie wird vom Controller aufgerufen, enthält aber keine HTTP-Logik.
- */
 @Service
 public class ScoreServiceImpl implements ScoreService {
 
     private static final Logger log = LoggerFactory.getLogger(ScoreServiceImpl.class);
 
-    /**
-     * Berechnet den TransferScore für einen Spieler basierend auf:
-     * - Alter (jünger = besser)
-     * - Marktwert (günstiger = besser)
-     * - Position (offensiv = höher gewichtet)
-     * - Erfahrung (älter = mehr Erfahrung)
-     * - Wettbewerb (höhere Liga = besser)
-     *
-     * @param player der zu bewertende Spieler
-     * @param targetClub optionaler Zielverein (für positionsspezifische Bewertung)
-     * @return TransferScore-Objekt mit Gesamtscore und Einzelscores
-     */
     public TransferScore calculateScore(SoFifaPlayer player, String targetClub) {
         log.info("⚽ Berechne TransferScore für {} zu {}", player.getName(), targetClub);
 
-        // Einzelscores berechnen (jeweils 0-100)
         int ageScore = calculateAgeScore(player.getAge());
         int priceScore = calculatePriceScore(player.getValue());
-        int positionScore = calculatePositionScore(player.getPrimaryPosition(), targetClub);
+        int positionScore = calculatePositionScore(player.getPrimaryPosition());
         int experienceScore = calculateExperienceScore(player.getAge());
-        int competitionScore = calculateCompetitionScore(targetClub);
+        int competitionScore = calculateCompetitionScore();
 
-        // Gesamtscore = gewichteter Durchschnitt
-        // Achtung: Die Gewichte müssen in der Summe 1.0 ergeben
         double totalScore =
                 positionScore * ScoringConstants.WEIGHT_POSITION +
                         priceScore * ScoringConstants.WEIGHT_PRICE +
@@ -49,9 +28,7 @@ public class ScoreServiceImpl implements ScoreService {
                         experienceScore * ScoringConstants.WEIGHT_EXPERIENCE +
                         competitionScore * ScoringConstants.WEIGHT_COMPETITION;
 
-        // Auf eine Dezimalstelle runden
         double roundedTotal = Math.round(totalScore * 10) / 10.0;
-
         String recommendation = getRecommendation(roundedTotal);
 
         log.info("✅ TransferScore für {}: {}/100", player.getName(), roundedTotal);
@@ -67,39 +44,43 @@ public class ScoreServiceImpl implements ScoreService {
         );
     }
 
-    /**
-     * Alters-Score: Je jünger, desto besser (Zukunftspotential)
-     *
-     * Begründung: Spieler unter 23 haben noch Entwicklungspotential,
-     * Spieler über 32 haben geringeren Wiederverkaufswert.
-     */
     private int calculateAgeScore(int age) {
-        if (age <= 0) return 50;      // Unbekanntes Alter → Mittelwert
-        if (age < 23) return 95;      // Talent mit Zukunft
-        if (age < 26) return 85;      // Im besten Alter
-        if (age < 29) return 70;      // Leistungsträger
-        if (age < 32) return 50;      // Absteigende Phase
-        return 30;                     // Karriereende nah
+        if (age <= 0) return 50;
+        if (age <= 21) return 100;
+        if (age <= 23) return 90;
+        if (age <= 25) return 80;
+        if (age <= 27) return 70;
+        if (age <= 29) return 55;
+        if (age <= 31) return 40;
+        if (age <= 34) return 30;
+        return 20;
     }
 
-    /**
-     * Preis-Score: Niedrigerer Marktwert = bessere Bewertung (Schnäppchen)
-     *
-     * Begründung: Ein Spieler mit 30 Mio. € ist ein besseres Investment
-     * als einer mit 120 Mio. € bei ähnlicher Leistung.
-     */
     private int calculatePriceScore(String valueStr) {
-        if (valueStr == null || valueStr.equals("?")) return 50;
+        if (valueStr == null || valueStr.equals("?") || valueStr.isEmpty()) return 50;
 
         try {
-            // Entferne " €" und konvertiere zu Millionen
-            double value = Double.parseDouble(valueStr.replace(" €", "").replace(" Mio.", "").trim());
+            String clean = valueStr.replace("€", "").trim();
+            double value = 0;
 
-            if (value >= 100) return 90;   // Superstar, aber teuer
-            if (value >= 50) return 75;    // Teuer, aber etabliert
-            if (value >= 20) return 60;    // Mittelfeld
-            if (value >= 10) return 45;    // Erschwinglich
-            return 30;                     // Schnäppchen
+            if (clean.contains("Mio.")) {
+                value = Double.parseDouble(clean.replace("Mio.", "").trim());
+            } else if (clean.contains("M")) {
+                value = Double.parseDouble(clean.replace("M", "").trim());
+            } else if (clean.contains("K")) {
+                value = Double.parseDouble(clean.replace("K", "").trim()) / 1000.0;
+            } else {
+                value = Double.parseDouble(clean);
+            }
+
+            if (value <= 5) return 95;
+            if (value <= 10) return 85;
+            if (value <= 20) return 70;
+            if (value <= 35) return 55;
+            if (value <= 50) return 40;
+            if (value <= 75) return 30;
+            if (value <= 100) return 20;
+            return 10;
         } catch (Exception e) {
             log.warn("Preis nicht parsbar: {}", valueStr);
             return 50;
@@ -107,62 +88,43 @@ public class ScoreServiceImpl implements ScoreService {
     }
 
     /**
-     * Positions-Score: Abhängig von der benötigten Position für den Zielverein
-     *
-     * Hier könnte man später eine dynamischere Logik einbauen,
-     * z.B. basierend auf den Schwachstellen des Zielvereins.
+     * Positions-Score: Generisch, keine Vereins-Spezialfälle
      */
-    private int calculatePositionScore(String position, String targetClub) {
+    private int calculatePositionScore(String position) {
         if (position == null) return 50;
-
         String posLower = position.toLowerCase();
 
-        // Beispiel: Napoli sucht offensive Mittelfeldspieler
-        if ("Napoli".equals(targetClub)) {
-            if (posLower.contains("attacking") || posLower.contains("midfield")) {
-                return 90;  // Perfekte Position für Napoli
-            } else if (posLower.contains("forward") || posLower.contains("striker")) {
-                return 80;  // Gut, aber nicht priorisiert
-            } else if (posLower.contains("defender") || posLower.contains("back")) {
-                return 70;  // Weniger Priorität
-            }
+        if (posLower.contains("attacking") || posLower.contains("forward") || posLower.contains("striker")) {
+            return 75;
+        } else if (posLower.contains("midfield")) {
+            return 70;
+        } else if (posLower.contains("defender") || posLower.contains("back")) {
+            return 60;
+        } else if (posLower.contains("goalkeeper") || posLower.contains("keeper")) {
+            return 55;
         }
 
-        return 60; // Standard für andere Vereine
+        return 65;
     }
 
-    /**
-     * Erfahrungs-Score: Ältere Spieler haben mehr Erfahrung
-     *
-     * Begründung: Ein 30-jähriger Spieler bringt mehr Stabilität
-     * und Führung als ein 20-jähriger.
-     */
     private int calculateExperienceScore(int age) {
         if (age <= 0) return 50;
-        if (age > 28) return 80;   // Erfahren, Führungsspieler
-        if (age > 24) return 60;   // Im Aufbau
-        if (age > 21) return 40;   // Talent mit wenig Erfahrung
-        return 20;                  // Sehr jung, unerfahren
+        if (age >= 28 && age <= 32) return 90;
+        if (age >= 25 && age <= 27) return 75;
+        if (age >= 33 && age <= 35) return 60;
+        if (age >= 22 && age <= 24) return 45;
+        if (age >= 18 && age <= 21) return 25;
+        if (age > 35) return 40;
+        return 30;
     }
 
     /**
-     * Wettbewerbs-Score: Höhere Liga = höherer Score
-     *
-     * Hier könnte man später die tatsächliche Liga des Zielvereins
-     * aus der Datenbank holen.
+     * Wettbewerbs-Score: Generisch
      */
-    private int calculateCompetitionScore(String targetClub) {
-        // TODO: Aus Datenbank die Liga des Zielvereins ermitteln
-        // Vorab: Fester Wert für Präsentation
-        if ("Napoli".equals(targetClub)) {
-            return 85;  // Serie A ist starke Liga
-        }
-        return 70; // Standard
+    private int calculateCompetitionScore() {
+        return 70;
     }
 
-    /**
-     * Empfehlung basierend auf dem Gesamtscore
-     */
     private String getRecommendation(double score) {
         if (score >= ScoringConstants.THRESHOLD_MUST_HAVE) {
             return "🚨 MUST-HAVE! Sofort zuschlagen!";

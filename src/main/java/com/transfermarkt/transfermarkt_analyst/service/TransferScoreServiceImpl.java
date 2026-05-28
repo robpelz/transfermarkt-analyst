@@ -1,8 +1,8 @@
 package com.transfermarkt.transfermarkt_analyst.service;
 
+import com.transfermarkt.transfermarkt_analyst.config.AppProperties;
 import com.transfermarkt.transfermarkt_analyst.dto.TransferScore;
 import com.transfermarkt.transfermarkt_analyst.dto.sofifa.SoFifaPlayer;
-import com.transfermarkt.transfermarkt_analyst.config.AppProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -47,11 +47,11 @@ public class TransferScoreServiceImpl implements TransferScoreService {
             position = player.getPrimaryPosition();
         }
 
-        double positionScore = calculatePositionScore(position, targetClub);
+        double positionScore = calculatePositionScore(position);
         double priceScore = calculatePriceScore(marketValueMio);
         double ageScore = calculateAgeScore(age);
         double experienceScore = calculateExperienceScore(age);
-        double competitionScore = 50.0;
+        double competitionScore = calculateCompetitionScore();
 
         double totalScore = positionScore * weights.getOrDefault("position", 0.30) +
                 priceScore * weights.getOrDefault("price", 0.25) +
@@ -159,27 +159,33 @@ public class TransferScoreServiceImpl implements TransferScoreService {
         }
     }
 
-    // ==================== SCORE-BERECHNUNGEN ====================
+    // ==================== SCORE-BERECHNUNGEN (NEUTRAL) ====================
 
-    private double calculatePositionScore(String position, String targetClub) {
+    /**
+     * Positions-Score: Generisch, keine Vereins-Spezialfälle
+     */
+    private double calculatePositionScore(String position) {
         if (position == null) return 50.0;
 
         String posLower = position.toLowerCase();
 
-        if ("Napoli".equals(targetClub)) {
-            if (posLower.contains("attacking") || posLower.contains("midfield") ||
-                    posLower.contains("wing") || posLower.contains("left") || posLower.contains("right")) {
-                return 90.0;
-            } else if (posLower.contains("back") || posLower.contains("defensive")) {
-                return 85.0;
-            } else if (posLower.contains("forward") || posLower.contains("striker")) {
-                return 80.0;
-            }
-            return 60.0;
+        if (posLower.contains("attacking") || posLower.contains("midfield") ||
+                posLower.contains("wing") || posLower.contains("left") || posLower.contains("right")) {
+            return 75.0;  // Offensive/Mittelfeld leicht bevorzugt
+        } else if (posLower.contains("forward") || posLower.contains("striker")) {
+            return 70.0;  // Stürmer
+        } else if (posLower.contains("back") || posLower.contains("defensive") || posLower.contains("defender")) {
+            return 60.0;  // Defensive
+        } else if (posLower.contains("goalkeeper") || posLower.contains("keeper")) {
+            return 55.0;  // Torwart
         }
-        return 50.0;
+
+        return 60.0; // Standard
     }
 
+    /**
+     * Preis-Score: Günstiger = besser
+     */
     private double calculatePriceScore(double marketValueMio) {
         if (marketValueMio <= 0) return 50.0;
         if (marketValueMio < 30) return 90.0;
@@ -189,6 +195,9 @@ public class TransferScoreServiceImpl implements TransferScoreService {
         return 40.0;
     }
 
+    /**
+     * Alters-Score: Jünger = besser
+     */
     private double calculateAgeScore(int age) {
         if (age <= 0) return 50.0;
         if (age < 22) return 90.0;
@@ -199,14 +208,30 @@ public class TransferScoreServiceImpl implements TransferScoreService {
         return 20.0;
     }
 
+    /**
+     * Erfahrungs-Score: Sweet Spot bei 28-32
+     */
     private double calculateExperienceScore(int age) {
         if (age <= 0) return 50.0;
-        if (age > 28) return 80.0;
-        if (age > 24) return 60.0;
-        if (age > 21) return 40.0;
-        return 20.0;
+        if (age >= 28 && age <= 32) return 80.0;
+        if (age >= 25 && age <= 27) return 60.0;
+        if (age >= 22 && age <= 24) return 40.0;
+        if (age >= 18 && age <= 21) return 20.0;
+        if (age > 32) return 70.0;
+        return 50.0;
     }
 
+    /**
+     * Wettbewerbs-Score: Generisch, keine Club-Spezialfälle
+     * Kann später aus Config oder DB kommen
+     */
+    private double calculateCompetitionScore() {
+        return 70.0; // Standard-Liga-Wert
+    }
+
+    /**
+     * Empfehlung basierend auf Gesamtscore
+     */
     private String getRecommendation(double score) {
         Map<String, Integer> thresholds = appProperties.getScoring().getThresholds();
 

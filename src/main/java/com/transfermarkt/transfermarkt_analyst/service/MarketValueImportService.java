@@ -1,7 +1,9 @@
 package com.transfermarkt.transfermarkt_analyst.service;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
@@ -13,13 +15,27 @@ public class MarketValueImportService {
 
     private final JdbcTemplate jdbcTemplate;
 
+    @Value("${import.marketvalues.file:src/main/resources/player_latest_market_value.csv}")
+    private String defaultFilepath;
+
     public MarketValueImportService(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    /**
+     * Importiert Marktwerte aus der Standard-Datei
+     */
     public void importMarketValues() {
-        String filepath = "C:/Users/49152/Desktop/java/transfermarkt-analyst/football-datasets/datalake/transfermarkt/player_latest_market_value/player_latest_market_value.csv";
-        System.out.println("📥 Importiere Marktwerte...");
+        importMarketValuesFromFile(defaultFilepath);
+    }
+
+    /**
+     * Importiert Marktwerte aus einer angegebenen CSV-Datei
+     * @param filepath Pfad zur CSV-Datei
+     * @return Anzahl der importierten Zeilen
+     */
+    public int importMarketValuesFromFile(String filepath) {
+        System.out.println("📥 Importiere Marktwerte aus: " + filepath);
 
         List<Object[]> batchArgs = new ArrayList<>();
         int batchSize = 1000;
@@ -45,7 +61,7 @@ public class MarketValueImportService {
                     try {
                         marketValue = (int) Double.parseDouble(clean(cols[2]));
                     } catch (NumberFormatException e) {
-                        // Ignorieren
+                        // Ignorieren, marketValue bleibt null
                     }
                 }
 
@@ -66,18 +82,26 @@ public class MarketValueImportService {
             }
 
             System.out.println("✅ " + count + " Marktwerte importiert!");
+            return count;
 
         } catch (IOException e) {
-            System.err.println("❌ Fehler: " + e.getMessage());
+            System.err.println("❌ Fehler beim Import: " + e.getMessage());
+            return 0;
         }
     }
 
+    /**
+     * Führt einen Batch-Insert aus
+     */
     private void executeBatch(List<Object[]> batchArgs) {
         String sql = "INSERT INTO player_latest_market_value (player_id, market_value) VALUES (?, ?)";
         jdbcTemplate.batchUpdate(sql, batchArgs);
     }
 
-    private String clean(String s) {
+    /**
+     * Bereinigt einen String
+     */
+    String clean(String s) {
         if (s == null || s.isEmpty()) return null;
         return s.replace("\"", "").trim();
     }
