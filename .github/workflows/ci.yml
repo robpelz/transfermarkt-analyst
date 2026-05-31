@@ -23,16 +23,15 @@ jobs:
         with:
           java-version: "22"
           distribution: "temurin"
+          # WICHTIG: KEINE "cache: maven" Zeile hier! Das verbietet GitHub den vorzeitigen Absturz.
 
-      - name: Java-Code dynamisch finden und testen
+      - name: Java-Code vollautomatisch finden und testen
         run: |
-          # Findet die pom.xml, egal wie tief oder in welchem Ordner sie versteckt ist
-          POM_PATH=$(find . -name "pom.xml" | head -n 1)
+          # Sucht die pom.xml im gesamten Repository, völlig egal ob Ordner groß oder klein geschrieben sind
+          POM_PATH=$(find . -iname "pom.xml" | head -n 1)
           if [ -z "$POM_PATH" ]; then
             echo "FEHLER: Es wurde absolut keine pom.xml im Repository gefunden!"
             exit 1
           fi
           echo "pom.xml gefunden unter: $POM_PATH"
-          
-          # Führt den Test genau dort aus und überspringt den Spring-Boot-Fehler
           mvn -B -f "$POM_PATH" clean test -Dspring-boot.repackage.skip=true
