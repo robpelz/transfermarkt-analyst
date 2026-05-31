@@ -24,6 +24,15 @@ jobs:
           java-version: "22"
           distribution: "temurin"
 
-      - name: Java-Code im Unterordner kompilieren und testen
-        working-directory: backend/transfermarkt-analyst
-        run: mvn -B clean test -Dspring-boot.repackage.skip=true
+      - name: Java-Code dynamisch finden und testen
+        run: |
+          # Findet die pom.xml, egal wie tief oder in welchem Ordner sie versteckt ist
+          POM_PATH=$(find . -name "pom.xml" | head -n 1)
+          if [ -z "$POM_PATH" ]; then
+            echo "FEHLER: Es wurde absolut keine pom.xml im Repository gefunden!"
+            exit 1
+          fi
+          echo "pom.xml gefunden unter: $POM_PATH"
+          
+          # Führt den Test genau dort aus und überspringt den Spring-Boot-Fehler
+          mvn -B -f "$POM_PATH" clean test -Dspring-boot.repackage.skip=true
