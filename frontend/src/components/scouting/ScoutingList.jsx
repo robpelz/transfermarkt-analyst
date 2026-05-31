@@ -1,7 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Star, Trash2, Edit2, Plus, X } from 'lucide-react';
 import playerService from '../../services/playerService';
+
+// Debounce Hook
+const useDebounce = (value, delay = 300) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debouncedValue;
+};
 
 const StarRating = ({ value, onChange }) => (
   <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '1rem' }}>
@@ -83,6 +93,9 @@ const ScoutingList = () => {
   const [strengthFitness, setStrengthFitness] = useState(70);
   const [weaknessTackling, setWeaknessTackling] = useState(30);
 
+  // Debounced search query
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
+
   const cleanName = (name) => name?.replace(/ \(\d+\)/, '') || '?';
 
   const getPositionGroup = (position) => {
@@ -134,6 +147,24 @@ const ScoutingList = () => {
     loadScoutingList();
   }, []);
 
+  // Search effect with debounce
+  useEffect(() => {
+    const searchPlayers = async (query) => {
+      if (!query.trim()) {
+        setSearchResults([]);
+        return;
+      }
+      try {
+        const results = await playerService.searchPlayers(query);
+        setSearchResults(results.slice(0, 5));
+      } catch (error) {
+        console.error('Fehler bei Suche:', error);
+      }
+    };
+
+    searchPlayers(debouncedSearchQuery);
+  }, [debouncedSearchQuery]);
+
   const loadScoutingList = async () => {
     try {
       const response = await axios.get('http://localhost:8080/api/scouting');
@@ -152,19 +183,6 @@ const ScoutingList = () => {
       console.error('Fehler beim Laden:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const searchPlayers = async (query) => {
-    if (!query.trim()) {
-      setSearchResults([]);
-      return;
-    }
-    try {
-      const results = await playerService.searchPlayers(query);
-      setSearchResults(results.slice(0, 5));
-    } catch (error) {
-      console.error('Fehler bei Suche:', error);
     }
   };
 
@@ -497,7 +515,7 @@ const ScoutingList = () => {
                   type="text"
                   placeholder="Spieler suchen..."
                   value={searchQuery}
-                  onChange={(e) => { setSearchQuery(e.target.value); searchPlayers(e.target.value); }}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   style={{ width: '100%', padding: '0.5rem 1rem', backgroundColor: '#0c0c16', border: '1px solid #2a2a3a', borderRadius: '0.5rem', color: 'white' }}
                 />
                 {searchResults.map(p => (

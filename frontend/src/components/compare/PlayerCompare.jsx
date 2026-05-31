@@ -1,331 +1,407 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Trophy, X, Sparkles, Target, Activity } from 'lucide-react';
-import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer, Legend } from 'recharts';
-import axios from 'axios';
 import playerService from '../../services/playerService';
-
-const WinnerConfetti = () => {
-  const [pieces, setPieces] = useState([]);
-  
-  useEffect(() => {
-    const newPieces = [];
-    for (let i = 0; i < 100; i++) {
-      newPieces.push({
-        id: i,
-        left: Math.random() * 100 + '%',
-        animationDuration: 1 + Math.random() * 2,
-        animationDelay: Math.random() * 0.5,
-      });
-    }
-    setPieces(newPieces);
-    const timer = setTimeout(() => setPieces([]), 3000);
-    return () => clearTimeout(timer);
-  }, []);
-  
-  return (
-    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none', zIndex: 1000, overflow: 'hidden' }}>
-      {pieces.map(piece => (
-        <div
-          key={piece.id}
-          style={{
-            position: 'absolute',
-            left: piece.left,
-            top: '-10%',
-            width: '10px',
-            height: '20px',
-            backgroundColor: ['#fbbf24', '#f59e0b', '#d97706', '#fcd34d'][Math.floor(Math.random() * 4)],
-            transform: 'rotate(' + Math.random() * 360 + 'deg)',
-            animation: `fall ${piece.animationDuration}s linear ${piece.animationDelay}s forwards`,
-          }}
-        />
-      ))}
-      <style>{`
-        @keyframes fall {
-          0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
-          100% { transform: translateY(100vh) rotate(360deg); opacity: 0; }
-        }
-      `}</style>
-    </div>
-  );
-};
-
-const SparkleEffect = () => (
-  <div style={{ position: 'absolute', top: '-10px', right: '-10px', animation: 'sparkle 0.5s ease-in-out infinite' }}>
-    <Sparkles className="w-6 h-6" style={{ color: '#fbbf24' }} />
-    <style>{`
-      @keyframes sparkle {
-        0%, 100% { transform: scale(1); opacity: 1; }
-        50% { transform: scale(1.3); opacity: 0.7; }
-      }
-    `}</style>
-  </div>
-);
+import api from '../../services/api';
 
 const PlayerCompare = () => {
+  const [player1Search, setPlayer1Search] = useState('');
+  const [player2Search, setPlayer2Search] = useState('');
+  const [player1Results, setPlayer1Results] = useState([]);
+  const [player2Results, setPlayer2Results] = useState([]);
   const [player1, setPlayer1] = useState(null);
   const [player2, setPlayer2] = useState(null);
-  const [search1, setSearch1] = useState('');
-  const [search2, setSearch2] = useState('');
-  const [suggestions1, setSuggestions1] = useState([]);
-  const [suggestions2, setSuggestions2] = useState([]);
-  const [loading1, setLoading1] = useState(false);
-  const [loading2, setLoading2] = useState(false);
-  const [showComparison, setShowComparison] = useState(false);
-  const [marketValue1, setMarketValue1] = useState(null);
-  const [marketValue2, setMarketValue2] = useState(null);
-  const [score1, setScore1] = useState(null);
-  const [score2, setScore2] = useState(null);
-  const [showWinnerAnim, setShowWinnerAnim] = useState(false);
-
-  const cleanName = (name) => name?.replace(/ \(\d+\)/, '') || '?';
+  const [player1Score, setPlayer1Score] = useState(null);
+  const [player2Score, setPlayer2Score] = useState(null);
+  const [winner, setWinner] = useState(null);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [searching1, setSearching1] = useState(false);
+  const [searching2, setSearching2] = useState(false);
+  const [showResults1, setShowResults1] = useState(false);
+  const [showResults2, setShowResults2] = useState(false);
+  const [addingToScouting, setAddingToScouting] = useState(null);
+  const [toastMessage, setToastMessage] = useState(null);
+  const [loadingDetails1, setLoadingDetails1] = useState(false);
+  const [loadingDetails2, setLoadingDetails2] = useState(false);
   
-  const formatMarketValue = (value) => {
-    if (!value || value === '?') return '?';
-    const num = parseFloat(value);
-    if (isNaN(num)) return '?';
-    if (num >= 1000) return `${(num / 1000).toFixed(1)} Mrd €`;
-    return `${Math.round(num)} Mio €`;
-  };
+  const resultsRef1 = useRef(null);
+  const resultsRef2 = useRef(null);
+  const inputRef1 = useRef(null);
+  const inputRef2 = useRef(null);
 
-  // Debounced search für Spieler 1
   useEffect(() => {
-    if (search1.length < 2) {
-      setSuggestions1([]);
+    const handleClickOutside = (event) => {
+      if (resultsRef1.current && !resultsRef1.current.contains(event.target) && !inputRef1.current.contains(event.target)) {
+        setShowResults1(false);
+      }
+      if (resultsRef2.current && !resultsRef2.current.contains(event.target) && !inputRef2.current.contains(event.target)) {
+        setShowResults2(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (player1Search.length < 2) {
+      setPlayer1Results([]);
+      setShowResults1(false);
       return;
     }
     const timer = setTimeout(async () => {
-      setLoading1(true);
+      setSearching1(true);
       try {
-        const results = await playerService.searchPlayers(search1);
-        setSuggestions1(results.slice(0, 5));
+        let searchTerm = player1Search;
+        if (searchTerm === 'mbappe') searchTerm = 'Mbappé';
+        if (searchTerm === 'Mbappe') searchTerm = 'Mbappé';
+        const results = await playerService.searchPlayers(searchTerm);
+        const filtered = results.filter(p => p.id !== player2?.id);
+        setPlayer1Results(filtered.slice(0, 5));
+        setShowResults1(true);
       } catch (error) {
         console.error('Fehler:', error);
       } finally {
-        setLoading1(false);
+        setSearching1(false);
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [search1]);
+  }, [player1Search, player2]);
 
-  // Debounced search für Spieler 2
   useEffect(() => {
-    if (search2.length < 2) {
-      setSuggestions2([]);
+    if (player2Search.length < 2) {
+      setPlayer2Results([]);
+      setShowResults2(false);
       return;
     }
     const timer = setTimeout(async () => {
-      setLoading2(true);
+      setSearching2(true);
       try {
-        const results = await playerService.searchPlayers(search2);
-        setSuggestions2(results.slice(0, 5));
+        let searchTerm = player2Search;
+        if (searchTerm === 'mbappe') searchTerm = 'Mbappé';
+        if (searchTerm === 'Mbappe') searchTerm = 'Mbappé';
+        const results = await playerService.searchPlayers(searchTerm);
+        const filtered = results.filter(p => p.id !== player1?.id);
+        setPlayer2Results(filtered.slice(0, 5));
+        setShowResults2(true);
       } catch (error) {
         console.error('Fehler:', error);
       } finally {
-        setLoading2(false);
+        setSearching2(false);
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [search2]);
+  }, [player2Search, player1]);
 
   const selectPlayer1 = async (player) => {
     setPlayer1(player);
-    setSuggestions1([]);
-    setSearch1(player.name);
+    setPlayer1Search('');
+    setPlayer1Results([]);
+    setShowResults1(false);
+    setLoadingDetails1(true);
     try {
-      const valueRes = await axios.get(`http://localhost:8080/api/sofifa/player/${player.id}/market-value`);
-      setMarketValue1(valueRes.data.market_value);
-      const scoreRes = await axios.get(`http://localhost:8080/api/sofifa/player/${player.id}/score`);
-      setScore1(scoreRes.data);
-    } catch (err) {
-      setMarketValue1('?');
-      setScore1(null);
+      const scoreData = await playerService.getTransferScore(player.id);
+      setPlayer1Score(scoreData);
+    } catch (error) {
+      console.error('Fehler:', error);
+    } finally {
+      setLoadingDetails1(false);
     }
   };
 
   const selectPlayer2 = async (player) => {
     setPlayer2(player);
-    setSuggestions2([]);
-    setSearch2(player.name);
+    setPlayer2Search('');
+    setPlayer2Results([]);
+    setShowResults2(false);
+    setLoadingDetails2(true);
     try {
-      const valueRes = await axios.get(`http://localhost:8080/api/sofifa/player/${player.id}/market-value`);
-      setMarketValue2(valueRes.data.market_value);
-      const scoreRes = await axios.get(`http://localhost:8080/api/sofifa/player/${player.id}/score`);
-      setScore2(scoreRes.data);
-    } catch (err) {
-      setMarketValue2('?');
-      setScore2(null);
+      const scoreData = await playerService.getTransferScore(player.id);
+      setPlayer2Score(scoreData);
+    } catch (error) {
+      console.error('Fehler:', error);
+    } finally {
+      setLoadingDetails2(false);
     }
   };
 
-  const removePlayer1 = () => {
+  const clearPlayer1 = () => {
     setPlayer1(null);
-    setSearch1('');
-    setMarketValue1(null);
-    setScore1(null);
-    setShowComparison(false);
+    setPlayer1Search('');
+    setPlayer1Score(null);
+    setPlayer1Results([]);
+    setShowResults1(false);
+    setWinner(null);
   };
 
-  const removePlayer2 = () => {
+  const clearPlayer2 = () => {
     setPlayer2(null);
-    setSearch2('');
-    setMarketValue2(null);
-    setScore2(null);
-    setShowComparison(false);
+    setPlayer2Search('');
+    setPlayer2Score(null);
+    setPlayer2Results([]);
+    setShowResults2(false);
+    setWinner(null);
   };
 
-  const startComparison = () => {
-    if (player1 && player2) {
-      setShowWinnerAnim(false);
-      setShowComparison(true);
-      setTimeout(() => setShowWinnerAnim(true), 100);
+  const resetComparison = () => {
+    clearPlayer1();
+    clearPlayer2();
+    setWinner(null);
+    setShowConfetti(false);
+  };
+
+  const showToast = (message) => {
+    setToastMessage(message);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const addToScoutingList = async (player, score) => {
+    setAddingToScouting(player.id);
+    try {
+      await api.post(`/scouting/${player.id}`, null, {
+        params: {
+          playerName: player.name,
+          rating: Math.min(5, Math.max(1, Math.floor(score?.totalScore / 20))),
+          note: `Aus dem Vergleich hinzugefügt. Score: ${score?.totalScore || 0}`,
+          talent: score?.positionScore || 70,
+          speed: score?.priceScore || 70,
+          tactics: score?.ageScore || 70,
+          passing: score?.experienceScore || 70,
+          technique: score?.competitionScore || 70,
+          fitness: 70,
+          tackling: 30
+        }
+      });
+      showToast(`${player.name} wurde zur Scout-Liste hinzugefügt!`);
+    } catch (error) {
+      console.error('Fehler beim Hinzufügen:', error);
+      showToast(`Fehler beim Hinzufügen von ${player.name}`);
+    } finally {
+      setAddingToScouting(null);
     }
   };
 
-  const getRadarData = () => {
-    if (!player1 || !player2) return [];
-    const val1 = parseFloat(marketValue1) || 0;
-    const val2 = parseFloat(marketValue2) || 0;
-    const maxValue = Math.max(val1, val2, 100);
-    const normalizedVal1 = (val1 / maxValue) * 100;
-    const normalizedVal2 = (val2 / maxValue) * 100;
+  const handleCompare = () => {
+    if (!player1 || !player2) return;
     
-    return [
-      { category: 'Alter', player1: player1.age ? 100 - Math.min(100, (player1.age / 40) * 100) : 50, player2: player2.age ? 100 - Math.min(100, (player2.age / 40) * 100) : 50 },
-      { category: 'Marktwert', player1: normalizedVal1, player2: normalizedVal2 },
-      { category: 'Score', player1: score1?.totalScore || 0, player2: score2?.totalScore || 0 },
-      { category: 'Talent', player1: 85, player2: 82 },
-      { category: 'Speed', player1: 88, player2: 85 },
-      { category: 'Technik', player1: 86, player2: 84 },
-    ];
+    setWinner(null);
+    setShowConfetti(false);
+    
+    const winnerScore = player1Score?.totalScore > player2Score?.totalScore ? 'player1' 
+                      : player2Score?.totalScore > player1Score?.totalScore ? 'player2' 
+                      : 'tie';
+    setWinner(winnerScore);
+    
+    if (winnerScore !== 'tie') {
+      setShowConfetti(true);
+      setTimeout(() => setShowConfetti(false), 3000);
+    }
   };
 
-  const getWinner = () => {
-    const totalScore1 = score1?.totalScore || 0;
-    const totalScore2 = score2?.totalScore || 0;
-    if (totalScore1 > totalScore2) return player1;
-    if (totalScore2 > totalScore1) return player2;
-    return null;
+  const getScoreColor = (score) => {
+    if (score >= 70) return '#10b981';
+    if (score >= 50) return '#eab308';
+    return '#ef4444';
   };
 
-  const winner = getWinner();
-  const radarData = getRadarData();
-
-  const renderPlayerCard = (player, title, onRemove, isPlayerOne) => {
-    const isWinner = winner && player && winner.id === player.id;
-    const showWinnerScore = showComparison && isWinner;
-    const currentScore = isPlayerOne ? score1 : score2;
-    const marketValue = isPlayerOne ? marketValue1 : marketValue2;
-    const suggestions = isPlayerOne ? suggestions1 : suggestions2;
-    const loading = isPlayerOne ? loading1 : loading2;
-    const searchValue = isPlayerOne ? search1 : search2;
-    const setSearchValue = isPlayerOne ? setSearch1 : setSearch2;
-    const selectPlayer = isPlayerOne ? selectPlayer1 : selectPlayer2;
-
+  const renderPlayerColumn = (player, score, isLoading, isWinner, onClear, searchTerm, setSearchTerm, results, showResults, setShowResults, searching, selectPlayer) => {
     return (
-      <div style={{ 
-        backgroundColor: isWinner && showComparison ? '#d97706' : '#1a1a2a', 
-        border: isWinner && showComparison ? '2px solid #fbbf24' : '1px solid #2a2a3a', 
-        borderRadius: '0.75rem', 
-        padding: '1.5rem', 
-        height: '100%',
-        position: 'relative',
-        boxShadow: isWinner && showComparison ? '0 0 20px rgba(217, 119, 6, 0.5)' : 'none',
-        transition: 'all 0.3s ease'
-      }}>
-        {isWinner && showComparison && <SparkleEffect />}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h3 style={{ fontSize: '1.125rem', fontWeight: '600', color: isWinner && showComparison ? '#fef3c7' : 'white' }}>{title}</h3>
-          {onRemove && (
-            <button onClick={onRemove} style={{ color: '#b8baff', background: 'none', border: 'none', cursor: 'pointer' }}>
-              <X className="w-5 h-5" />
-            </button>
+      <div style={{ flex: 1 }}>
+        <div style={{ position: 'relative', marginBottom: '20px' }}>
+          <input
+            type="text"
+            placeholder="Spieler suchen (z.B. Wirtz, Haaland)"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            onFocus={() => results.length > 0 && setShowResults(true)}
+            style={{
+              width: '100%',
+              padding: '12px 16px',
+              backgroundColor: '#1a1a2a',
+              border: '1px solid #2a2a3a',
+              borderRadius: '8px',
+              color: 'white',
+              fontSize: '16px',
+              boxSizing: 'border-box'
+            }}
+          />
+          {searching && <div style={{ color: '#b8baff', fontSize: '12px', marginTop: '4px' }}>Suche...</div>}
+          {showResults && results.length > 0 && (
+            <div
+              ref={results === player1Results ? resultsRef1 : resultsRef2}
+              style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                right: 0,
+                backgroundColor: '#1a1a2a',
+                border: '1px solid #2a2a3a',
+                borderRadius: '8px',
+                zIndex: 100,
+                maxHeight: '250px',
+                overflow: 'auto',
+                marginTop: '4px'
+              }}
+            >
+              {results.map(p => (
+                <div
+                  key={p.id}
+                  onClick={() => selectPlayer(p)}
+                  style={{
+                    padding: '10px 16px',
+                    cursor: 'pointer',
+                    borderBottom: '1px solid #2a2a3a'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2a2a3a'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  <div style={{ color: 'white', fontSize: '14px' }}>{p.name}</div>
+                  <div style={{ color: '#b8baff', fontSize: '12px' }}>{p.club} | {p.position}</div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
-        
+
         {player ? (
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-              <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'linear-gradient(135deg, #6666ff, #b8baff)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                <img 
-                  src={`https://tmssl.akamaized.net/images/portrait/header/${player.id}.png`}
-                  alt={player.name}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  onError={(e) => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=6666ff&color=fff&size=64`; }}
-                />
-              </div>
-              <div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: isWinner && showComparison ? '#fef3c7' : 'white' }}>{cleanName(player.name)}</div>
-                <div style={{ color: isWinner && showComparison ? '#fef3c7' : '#b8baff', fontSize: '0.875rem' }}>{player.club}</div>
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
-              <div style={{ backgroundColor: isWinner && showComparison ? 'rgba(0,0,0,0.2)' : '#0c0c16', borderRadius: '0.5rem', padding: '0.5rem', textAlign: 'center' }}>
-                <div style={{ color: isWinner && showComparison ? '#fef3c7' : 'white', fontWeight: 'bold' }}>{player.age || '?'}</div>
-                <div style={{ color: isWinner && showComparison ? '#fef3c7' : '#b8baff', fontSize: '0.75rem' }}>Alter</div>
-              </div>
-              <div style={{ backgroundColor: isWinner && showComparison ? 'rgba(0,0,0,0.2)' : '#0c0c16', borderRadius: '0.5rem', padding: '0.5rem', textAlign: 'center' }}>
-                <div style={{ color: isWinner && showComparison ? '#fef3c7' : 'white', fontWeight: 'bold' }}>{formatMarketValue(marketValue)}</div>
-                <div style={{ color: isWinner && showComparison ? '#fef3c7' : '#b8baff', fontSize: '0.75rem' }}>Marktwert</div>
-              </div>
-              <div style={{ backgroundColor: isWinner && showComparison ? 'rgba(0,0,0,0.2)' : '#0c0c16', borderRadius: '0.5rem', padding: '0.5rem', textAlign: 'center' }}>
-                <div style={{ color: isWinner && showComparison ? '#fef3c7' : 'white', fontWeight: 'bold' }}>{player.nationality || '?'}</div>
-                <div style={{ color: isWinner && showComparison ? '#fef3c7' : '#b8baff', fontSize: '0.75rem' }}>Nationalität</div>
-              </div>
-              <div style={{ backgroundColor: isWinner && showComparison ? 'rgba(0,0,0,0.2)' : '#0c0c16', borderRadius: '0.5rem', padding: '0.5rem', textAlign: 'center' }}>
-                <div style={{ color: isWinner && showComparison ? '#fef3c7' : 'white', fontWeight: 'bold' }}>{player.position?.split(' - ')[0] || '?'}</div>
-                <div style={{ color: isWinner && showComparison ? '#fef3c7' : '#b8baff', fontSize: '0.75rem' }}>Position</div>
-              </div>
-            </div>
-            <div style={{ 
-              marginTop: '1rem', 
-              paddingTop: '1rem', 
-              borderTop: '1px solid rgba(255,255,255,0.2)', 
-              textAlign: 'center',
-              backgroundColor: showWinnerScore ? 'rgba(0,0,0,0.2)' : 'transparent',
-              borderRadius: '0.5rem',
-              padding: '0.5rem',
-              transition: 'all 0.3s ease'
+            <div style={{
+              backgroundColor: isWinner ? 'rgba(234, 179, 8, 0.15)' : '#1a1a2a',
+              border: isWinner ? '2px solid #eab308' : '1px solid #2a2a3a',
+              borderRadius: '8px',
+              padding: '16px',
+              position: 'relative',
+              marginBottom: '20px'
             }}>
-              <span style={{ fontSize: '0.875rem', color: isWinner && showComparison ? '#fef3c7' : '#b8baff' }}>TransferScore: </span>
-              <span style={{ 
-                fontSize: '1.5rem', 
-                fontWeight: 'bold', 
-                color: isWinner && showComparison ? '#fef3c7' : '#6666ff',
-                textShadow: showWinnerScore ? '0 0 5px rgba(0,0,0,0.3)' : 'none'
-              }}>
-                {currentScore?.totalScore || '?'}
-              </span>
-              <span style={{ fontSize: '0.875rem', color: isWinner && showComparison ? '#fef3c7' : '#b8baff' }}> / 100</span>
-              {showWinnerScore && (
-                <div style={{ fontSize: '0.7rem', color: '#fef3c7', marginTop: '0.25rem', fontWeight: 'bold' }}>
-                  🏆 SIEGER! 🏆
+              <button
+                onClick={onClear}
+                style={{
+                  position: 'absolute',
+                  top: '12px',
+                  right: '12px',
+                  background: 'none',
+                  border: 'none',
+                  color: '#b8baff',
+                  cursor: 'pointer',
+                  fontSize: '16px'
+                }}
+              >
+                ✕
+              </button>
+              {isWinner && <div style={{ position: 'absolute', top: '12px', left: '12px', fontSize: '22px' }}>🏆</div>}
+              <Link to={`/players/${player.id}`} style={{ textDecoration: 'none' }}>
+                <h3 style={{ color: isWinner ? '#eab308' : 'white', fontSize: '18px', marginBottom: '6px', marginTop: '4px' }}>
+                  {player.name}
+                </h3>
+              </Link>
+              <div style={{ color: '#b8baff', fontSize: '13px', marginBottom: '12px' }}>
+                {player.club || '?'} | {player.position || '?'}
+              </div>
+              
+              {isLoading ? (
+                <div style={{ textAlign: 'center', padding: '20px' }}>
+                  <div style={{ color: '#b8baff', fontSize: '14px' }}>Lade Details...</div>
                 </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div style={{ position: 'relative' }}>
-            <div style={{ marginBottom: '0.75rem' }}>
-              <input
-                type="text"
-                placeholder="Spieler suchen..."
-                value={searchValue}
-                onChange={(e) => setSearchValue(e.target.value)}
-                style={{ width: '100%', padding: '0.5rem 1rem', backgroundColor: '#0c0c16', border: '1px solid #2a2a3a', borderRadius: '0.5rem', color: 'white' }}
-              />
-            </div>
-            {loading && <div className="loading-spinner"><div className="spinner"></div></div>}
-            {suggestions.length > 0 && (
-              <div style={{ position: 'absolute', zIndex: 10, width: '100%', backgroundColor: '#1a1a2a', border: '1px solid #2a2a3a', borderRadius: '0.5rem', marginTop: '0.25rem' }}>
-                {suggestions.map(p => (
-                  <div key={p.id} onClick={() => selectPlayer(p)} style={{ padding: '0.75rem', cursor: 'pointer', borderBottom: '1px solid #2a2a3a' }}>
-                    <div style={{ fontWeight: '500', color: 'white' }}>{cleanName(p.name)}</div>
-                    <div style={{ fontSize: '0.875rem', color: '#b8baff' }}>{p.club}</div>
+              ) : score ? (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                    <div>
+                      <div style={{ fontSize: '28px', fontWeight: 'bold', color: getScoreColor(score.totalScore || 0) }}>
+                        {score.totalScore || 0}
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#b8baff' }}>Score</div>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '12px', color: '#b8baff', marginBottom: '4px' }}>Detailanalyse</div>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '11px', color: '#6666ff' }}>P:{score.positionScore || 0}</span>
+                        <span style={{ fontSize: '11px', color: '#10b981' }}>PR:{score.priceScore || 0}</span>
+                        <span style={{ fontSize: '11px', color: '#eab308' }}>A:{score.ageScore || 0}</span>
+                        <span style={{ fontSize: '11px', color: '#f97316' }}>E:{score.experienceScore || 0}</span>
+                      </div>
+                    </div>
                   </div>
-                ))}
+                  
+                  <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '11px', color: '#b8baff' }}>Alter</div>
+                      <div style={{ fontSize: '15px', fontWeight: 'bold', color: 'white' }}>{player.age || '?'}</div>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '11px', color: '#b8baff' }}>Marktwert</div>
+                      <div style={{ fontSize: '13px', fontWeight: 'bold', color: 'white' }}>{player.value || '?'}</div>
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={() => addToScoutingList(player, score)}
+                    disabled={addingToScouting === player.id}
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      backgroundColor: addingToScouting === player.id ? '#4a4a6a' : '#6666ff',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: addingToScouting === player.id ? 'not-allowed' : 'pointer',
+                      fontSize: '13px'
+                    }}
+                  >
+                    {addingToScouting === player.id ? '⏳ Wird hinzugefügt...' : '📋 Zur Scout-Liste hinzufügen'}
+                  </button>
+                </>
+              ) : null}
+            </div>
+            
+            {score && (
+              <div style={{
+                backgroundColor: '#0c0c16',
+                borderRadius: '8px',
+                padding: '16px'
+              }}>
+                <div style={{ fontSize: '13px', color: 'white', marginBottom: '12px' }}>⚡ Leistungsdaten</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#b8baff' }}>Position</div>
+                    <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#6666ff' }}>{score.positionScore || 0}%</div>
+                    <div style={{ height: '3px', background: '#2a2a3a', marginTop: '4px', borderRadius: '2px' }}>
+                      <div style={{ width: `${score.positionScore || 0}%`, height: '3px', background: '#6666ff', borderRadius: '2px' }} />
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#b8baff' }}>Preis</div>
+                    <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#10b981' }}>{score.priceScore || 0}%</div>
+                    <div style={{ height: '3px', background: '#2a2a3a', marginTop: '4px', borderRadius: '2px' }}>
+                      <div style={{ width: `${score.priceScore || 0}%`, height: '3px', background: '#10b981', borderRadius: '2px' }} />
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#b8baff' }}>Alter</div>
+                    <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#eab308' }}>{score.ageScore || 0}%</div>
+                    <div style={{ height: '3px', background: '#2a2a3a', marginTop: '4px', borderRadius: '2px' }}>
+                      <div style={{ width: `${score.ageScore || 0}%`, height: '3px', background: '#eab308', borderRadius: '2px' }} />
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#b8baff' }}>Erfahrung</div>
+                    <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#f97316' }}>{score.experienceScore || 0}%</div>
+                    <div style={{ height: '3px', background: '#2a2a3a', marginTop: '4px', borderRadius: '2px' }}>
+                      <div style={{ width: `${score.experienceScore || 0}%`, height: '3px', background: '#f97316', borderRadius: '2px' }} />
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
+          </div>
+        ) : (
+          <div style={{
+            backgroundColor: '#1a1a2a',
+            border: '1px solid #2a2a3a',
+            borderRadius: '8px',
+            padding: '40px 20px',
+            textAlign: 'center',
+            color: '#b8baff',
+            fontSize: '14px'
+          }}>
+            Kein Spieler ausgewählt
           </div>
         )}
       </div>
@@ -333,132 +409,155 @@ const PlayerCompare = () => {
   };
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#0c0c16', padding: '2rem' }}>
-      {showWinnerAnim && winner && <WinnerConfetti />}
+    <div style={{ background: '#0c0c16', minHeight: '100vh', padding: '24px' }}>
+      <style>{`
+        @keyframes confetti-fall {
+          0% { transform: translateY(-100vh) rotate(0deg); opacity: 1; }
+          100% { transform: translateY(100vh) rotate(360deg); opacity: 0; }
+        }
+        .confetti {
+          position: fixed;
+          pointer-events: none;
+          z-index: 1000;
+          animation: confetti-fall 3s ease-out forwards;
+        }
+        @keyframes toast-fade {
+          0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+          15% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+          85% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+          100% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+        }
+      `}</style>
       
-      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <h1 style={{ fontSize: '2rem', fontWeight: 'bold', color: 'white', marginBottom: '0.5rem' }}>Spieler-Vergleich</h1>
-          <p style={{ color: '#b8baff' }}>Vergleiche zwei Spieler direkt miteinander</p>
+      {showConfetti && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none', zIndex: 999, overflow: 'hidden' }}>
+          {[...Array(150)].map((_, i) => {
+            const colors = ['#6666ff', '#10b981', '#eab308', '#f97316', '#ef4444', '#8b5cf6', '#ec489a'];
+            return (
+              <div
+                key={i}
+                className="confetti"
+                style={{
+                  left: `${Math.random() * 100}%`,
+                  animationDelay: `${Math.random() * 0.5}s`,
+                  animationDuration: `${1 + Math.random() * 2}s`,
+                  width: `${6 + Math.random() * 8}px`,
+                  height: `${6 + Math.random() * 8}px`,
+                  backgroundColor: colors[Math.floor(Math.random() * colors.length)],
+                  borderRadius: Math.random() > 0.5 ? '50%' : '0'
+                }}
+              />
+            );
+          })}
         </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1.5rem', marginBottom: '2rem' }}>
-          {renderPlayerCard(player1, 'Spieler 1', player1 ? removePlayer1 : null, true)}
-          {renderPlayerCard(player2, 'Spieler 2', player2 ? removePlayer2 : null, false)}
+      )}
+      
+      {toastMessage && (
+        <div style={{
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          backgroundColor: '#1a1a2a',
+          border: '1px solid #6666ff',
+          borderRadius: '10px',
+          padding: '12px 24px',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.5), 0 0 10px rgba(102,102,255,0.3)',
+          zIndex: 2000,
+          animation: 'toast-fade 3s ease forwards',
+          textAlign: 'center',
+          minWidth: '280px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '18px' }}>✅</span>
+            <span style={{ color: 'white', fontSize: '14px', fontWeight: '500' }}>{toastMessage}</span>
+          </div>
         </div>
-
-        {player1 && player2 && !showComparison && (
-          <div style={{ textAlign: 'center' }}>
-            <button onClick={startComparison} style={{ padding: '0.75rem 2rem', backgroundColor: '#6666ff', color: 'white', border: 'none', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '1rem' }}>
-              Vergleich starten
+      )}
+      
+      <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <Link to="/" style={{ color: '#b8baff', textDecoration: 'none', fontSize: '14px' }}>
+            ← Zurück
+          </Link>
+          {(player1 || player2) && (
+            <button
+              onClick={resetComparison}
+              style={{
+                padding: '6px 14px',
+                backgroundColor: '#2a2a3a',
+                color: '#b8baff',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '13px'
+              }}
+            >
+              Neuer Vergleich
             </button>
+          )}
+        </div>
+        
+        <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: 'white', marginBottom: '24px' }}>Spielervergleich</h1>
+        
+        <div style={{ display: 'flex', gap: '20px' }}>
+          {renderPlayerColumn(
+            player1, player1Score, loadingDetails1, winner === 'player1', clearPlayer1,
+            player1Search, setPlayer1Search, player1Results, showResults1, setShowResults1, searching1, selectPlayer1
+          )}
+          
+          <button
+            onClick={handleCompare}
+            disabled={!player1 || !player2}
+            style={{
+              alignSelf: 'flex-start',
+              padding: '12px 28px',
+              backgroundColor: !player1 || !player2 ? '#4a4a6a' : '#6666ff',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: !player1 || !player2 ? 'not-allowed' : 'pointer',
+              fontSize: '16px',
+              marginTop: '0'
+            }}
+          >
+            Vergleichen
+          </button>
+          
+          {renderPlayerColumn(
+            player2, player2Score, loadingDetails2, winner === 'player2', clearPlayer2,
+            player2Search, setPlayer2Search, player2Results, showResults2, setShowResults2, searching2, selectPlayer2
+          )}
+        </div>
+        
+        {winner && winner !== 'tie' && (
+          <div style={{
+            textAlign: 'center',
+            marginTop: '24px',
+            padding: '12px',
+            backgroundColor: 'rgba(234, 179, 8, 0.1)',
+            borderRadius: '8px',
+            border: '1px solid #eab308'
+          }}>
+            <span style={{ fontSize: '20px', marginRight: '6px' }}>🏆</span>
+            <span style={{ color: '#eab308', fontWeight: 'bold', fontSize: '16px' }}>
+              {winner === 'player1' ? player1.name : player2.name} gewinnt den Vergleich!
+            </span>
+            <span style={{ fontSize: '20px', marginLeft: '6px' }}>🏆</span>
           </div>
         )}
-
-        {showComparison && (
-          <div style={{ marginTop: '2rem' }}>
-            {winner && (
-              <div style={{
-                background: 'linear-gradient(135deg, #b45309, #d97706)',
-                borderRadius: '0.75rem',
-                padding: '1rem',
-                marginBottom: '1.5rem',
-                textAlign: 'center',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
-              }}>
-                <Trophy className="w-8 h-8 mx-auto mb-2" style={{ color: '#fbbf24' }} />
-                <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'white' }}>
-                  Sieger: {cleanName(winner.name)}
-                </div>
-                <div style={{ fontSize: '0.875rem', color: '#fef3c7' }}>
-                  {score1?.totalScore > score2?.totalScore ? 
-                    `${score1.totalScore} : ${score2.totalScore} Punkte` : 
-                    `${score2.totalScore} : ${score1.totalScore} Punkte`}
-                </div>
-              </div>
-            )}
-
-            <div style={{ backgroundColor: '#1a1a2a', borderRadius: '0.75rem', padding: '1.5rem', marginBottom: '1.5rem' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: '600', color: 'white', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Target className="w-5 h-5" /> Fähigkeiten Radar
-              </h2>
-              <div style={{ height: '400px', width: '100%' }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart data={radarData}>
-                    <PolarGrid stroke="#2a2a3a" />
-                    <PolarAngleAxis dataKey="category" tick={{ fill: '#b8baff', fontSize: 10 }} />
-                    <Radar name={cleanName(player1?.name)} dataKey="player1" stroke="#6666ff" fill="#6666ff" fillOpacity={0.3} />
-                    <Radar name={cleanName(player2?.name)} dataKey="player2" stroke="#b8baff" fill="#b8baff" fillOpacity={0.3} />
-                    <Legend wrapperStyle={{ color: 'white' }} />
-                  </RadarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div style={{ backgroundColor: '#1a1a2a', borderRadius: '0.75rem', overflow: 'hidden' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: '600', color: 'white', padding: '1rem 1.5rem 0 1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Activity className="w-5 h-5" /> Detailvergleich
-              </h2>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ backgroundColor: '#0c0c16', borderBottom: '1px solid #2a2a3a' }}>
-                      <th style={{ padding: '0.75rem 1rem', textAlign: 'left', color: '#b8baff' }}>Kategorie</th>
-                      <th style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#b8baff' }}>{player1 ? cleanName(player1.name) : 'Spieler 1'}</th>
-                      <th style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#b8baff' }}>{player2 ? cleanName(player2.name) : 'Spieler 2'}</th>
-                      <th style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#b8baff' }}>Vergleich</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr style={{ borderBottom: '1px solid #2a2a3a' }}>
-                      <td style={{ padding: '0.75rem 1rem', color: 'white', fontWeight: '500' }}>Alter</td>
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#b8baff' }}>{player1?.age || '?'} Jahre</td>
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#b8baff' }}>{player2?.age || '?'} Jahre</td>
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#b8baff' }}>
-                        {player1?.age < player2?.age ? '➡️ Jünger' : player2?.age < player1?.age ? '⬅️ Jünger' : '⚖️ Gleich'}
-                      </td>
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #2a2a3a' }}>
-                      <td style={{ padding: '0.75rem 1rem', color: 'white', fontWeight: '500' }}>Marktwert</td>
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#b8baff' }}>{formatMarketValue(marketValue1)}</td>
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#b8baff' }}>{formatMarketValue(marketValue2)}</td>
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#b8baff' }}>
-                        {parseFloat(marketValue1) > parseFloat(marketValue2) ? '➡️ Höher' : parseFloat(marketValue2) > parseFloat(marketValue1) ? '⬅️ Höher' : '⚖️ Gleich'}
-                      </td>
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #2a2a3a' }}>
-                      <td style={{ padding: '0.75rem 1rem', color: 'white', fontWeight: '500' }}>TransferScore</td>
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#b8baff' }}>{score1?.totalScore || '?'} / 100</td>
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#b8baff' }}>{score2?.totalScore || '?'} / 100</td>
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#b8baff' }}>
-                        {score1?.totalScore > score2?.totalScore ? '➡️ Besser' : score2?.totalScore > score1?.totalScore ? '⬅️ Besser' : '⚖️ Gleich'}
-                      </td>
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #2a2a3a' }}>
-                      <td style={{ padding: '0.75rem 1rem', color: 'white', fontWeight: '500' }}>Position</td>
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#b8baff' }}>{player1?.position?.split(' - ')[0] || '?'}</td>
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#b8baff' }}>{player2?.position?.split(' - ')[0] || '?'}</td>
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#b8baff' }}>-</td>
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #2a2a3a' }}>
-                      <td style={{ padding: '0.75rem 1rem', color: 'white', fontWeight: '500' }}>Nationalität</td>
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#b8baff' }}>{player1?.nationality || '?'}</td>
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#b8baff' }}>{player2?.nationality || '?'}</td>
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#b8baff' }}>-</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1.5rem' }}>
-              <button
-                onClick={() => setShowComparison(false)}
-                style={{ color: '#6666ff', background: 'none', border: 'none', cursor: 'pointer', padding: '0.5rem 1rem' }}
-              >
-                Neuen Vergleich starten
-              </button>
-            </div>
+        
+        {winner === 'tie' && (
+          <div style={{
+            textAlign: 'center',
+            marginTop: '24px',
+            padding: '12px',
+            backgroundColor: '#1a1a2a',
+            borderRadius: '8px',
+            border: '1px solid #2a2a3a'
+          }}>
+            <span style={{ fontSize: '18px', marginRight: '6px' }}>🤝</span>
+            <span style={{ color: '#b8baff', fontSize: '16px' }}>Unentschieden! Beide Spieler sind gleich gut.</span>
           </div>
         )}
       </div>

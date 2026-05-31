@@ -6,62 +6,100 @@ import playerService from '../../services/playerService';
 const PlayerList = () => {
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
-  const [randomPlayers, setRandomPlayers] = useState([]);
+  const [popularPlayers, setPopularPlayers] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [debouncedQuery, setDebouncedQuery] = useState('');
 
   useEffect(() => {
-    loadRandomPlayers();
-  }, []);
-
-  const loadRandomPlayers = async () => {
-    setLoading(true);
-    const players = await playerService.getRandomPlayers();
-    setRandomPlayers(players);
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    if (query.length < 2) {
-      setSuggestions([]);
-      return;
-    }
-    const delay = setTimeout(() => searchPlayers(), 300);
-    return () => clearTimeout(delay);
+    const timer = setTimeout(() => {
+      setDebouncedQuery(query);
+    }, 500);
+    return () => clearTimeout(timer);
   }, [query]);
 
-  const searchPlayers = async () => {
+  const popularNames = ['Wirtz', 'Haaland', 'Musiala'];
+
+  useEffect(() => {
+    loadPopularPlayers();
+  }, []);
+
+  const loadPopularPlayers = async () => {
     setLoading(true);
-    const results = await playerService.searchPlayers(query);
-    setSuggestions(results.slice(0, 8));
-    setLoading(false);
+    try {
+      const results = await Promise.all(
+        popularNames.map(name => playerService.searchPlayers(name))
+      );
+      const players = results
+        .filter(result => result.length > 0)
+        .map(result => result[0])
+        .slice(0, 3);
+      setPopularPlayers(players);
+    } catch (error) {
+      console.error('Fehler:', error);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  useEffect(() => {
+    const search = async () => {
+      if (debouncedQuery.length < 2) {
+        setSuggestions([]);
+        return;
+      }
+      setSearching(true);
+      try {
+        const results = await playerService.searchPlayers(debouncedQuery);
+        setSuggestions(results.slice(0, 6));
+      } catch (error) {
+        console.error('Fehler bei Suche:', error);
+      } finally {
+        setSearching(false);
+      }
+    };
+    search();
+  }, [debouncedQuery]);
 
   const cleanName = (name) => name?.replace(/ \(\d+\)/, '') || '?';
   
   const formatValue = (val) => {
     if (!val || val === '?') return '?';
-    let num = String(val).replace('€', '').replace('Mio', '').replace('.', '').trim();
-    const floatNum = parseFloat(num);
-    if (isNaN(floatNum)) return '?';
-    if (floatNum >= 1000) return `${(floatNum / 1000).toFixed(1)} Mrd €`;
-    return `${Math.round(floatNum)} Mio €`;
+    const match = val.match(/(\d+(?:\.\d+)?)/);
+    if (!match) return '?';
+    const num = parseFloat(match[1]);
+    if (val.includes('Mrd')) return `${num} Mrd €`;
+    if (val.includes('Mio')) return `${Math.round(num)} Mio €`;
+    return `${Math.round(num)} €`;
   };
 
-  const renderPlayerCards = (players) => (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' }}>
+  const renderPlayerCards = (players, columns = 3) => (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: `repeat(${columns}, 1fr)`,
+      gap: '24px',
+      marginTop: '20px'
+    }}>
       {players.map((player) => (
         <Link key={player.id} to={`/players/${player.id}`} style={{ textDecoration: 'none' }}>
           <div style={{
             backgroundColor: '#1a1a2a',
             border: '1px solid #2a2a3a',
-            borderRadius: '0.5rem',
-            padding: '1rem',
-            transition: '0.2s'
-          }}>
-            <div style={{ fontWeight: 'bold', color: 'white' }}>{cleanName(player.name)}</div>
-            <div style={{ color: '#b8baff', fontSize: '0.875rem' }}>{player.club || '?'}</div>
-            <div style={{ color: '#b8baff', fontSize: '0.75rem', marginTop: '0.5rem' }}>
-              {player.age} Jahre | {formatValue(player.value)}
+            borderRadius: '16px',
+            padding: '24px',
+            transition: 'transform 0.2s',
+            cursor: 'pointer'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-4px)'}
+          onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
+            <div style={{ fontWeight: 'bold', color: 'white', fontSize: '18px', marginBottom: '8px' }}>
+              {cleanName(player.name)}
+            </div>
+            <div style={{ color: '#b8baff', fontSize: '14px', marginBottom: '12px' }}>
+              {player.club || '?'}
+            </div>
+            <div style={{ color: '#b8baff', fontSize: '13px' }}>
+              {player.age || '?'} Jahre | {formatValue(player.value)}
             </div>
           </div>
         </Link>
@@ -70,54 +108,64 @@ const PlayerList = () => {
   );
 
   return (
-    <div style={{ backgroundColor: '#0c0c16', minHeight: '100vh', padding: '2rem' }}>
-      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-        <h1 style={{ fontSize: '2rem', fontWeight: 'bold', color: 'white', marginBottom: '0.5rem' }}>Spieler-Suche</h1>
-        <p style={{ color: '#b8baff', marginBottom: '2rem' }}>Suche nach Spielern in der Datenbank</p>
+    <div style={{ backgroundColor: '#0c0c16', minHeight: '100vh', padding: '24px' }}>
+      <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+        <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: 'white', marginBottom: '8px' }}>Spieler-Suche</h1>
+        <p style={{ color: '#b8baff', marginBottom: '24px' }}>Suche nach Spielern in der Datenbank</p>
 
-        <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
+        <div style={{ display: 'flex', gap: '12px', marginBottom: '32px' }}>
           <input
             type="text"
             placeholder="Spieler suchen (z.B. Wirtz, Haaland)"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && setDebouncedQuery(query)}
             style={{
               flex: 1,
-              padding: '1rem',
-              fontSize: '1rem',
+              padding: '12px 16px',
+              fontSize: '16px',
               backgroundColor: '#1a1a2a',
               border: '1px solid #2a2a3a',
-              borderRadius: '0.5rem',
-              color: 'white'
+              borderRadius: '8px',
+              color: 'white',
+              outline: 'none'
             }}
           />
-          <button
-            onClick={searchPlayers}
-            disabled={loading}
-            style={{
-              padding: '0 2rem',
-              backgroundColor: '#6666ff',
-              color: 'white',
-              border: 'none',
-              borderRadius: '0.5rem',
-              cursor: loading ? 'not-allowed' : 'pointer'
-            }}
-          >
-            {loading ? 'Lädt...' : 'Suchen'}
-          </button>
         </div>
-
-        {query.length < 2 && randomPlayers.length > 0 && (
-          <>
-            <h2 style={{ color: 'white', marginBottom: '1rem' }}>Beliebte Spieler</h2>
-            {renderPlayerCards(randomPlayers)}
-          </>
-        )}
 
         {suggestions.length > 0 && (
           <>
-            <h2 style={{ color: 'white', marginBottom: '1rem' }}>Suchergebnisse</h2>
-            {renderPlayerCards(suggestions)}
+            <h2 style={{ color: 'white', fontSize: '20px', marginBottom: '16px' }}>
+              🔍 Suchergebnisse für "{query}"
+            </h2>
+            {renderPlayerCards(suggestions, 3)}
+          </>
+        )}
+
+        {query.length >= 2 && suggestions.length === 0 && !searching && (
+          <div style={{
+            backgroundColor: '#1a1a2a',
+            border: '1px solid #2a2a3a',
+            borderRadius: '12px',
+            padding: '48px',
+            textAlign: 'center'
+          }}>
+            <p style={{ color: '#b8baff' }}>Keine Spieler gefunden für "{query}"</p>
+          </div>
+        )}
+
+        {query.length < 2 && (
+          <>
+            <h2 style={{ color: 'white', fontSize: '20px', marginBottom: '16px' }}>
+              ⭐ Beliebte Spieler
+            </h2>
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: '48px', color: '#b8baff' }}>
+                Lade Spieler...
+              </div>
+            ) : (
+              renderPlayerCards(popularPlayers, 3)
+            )}
           </>
         )}
       </div>
