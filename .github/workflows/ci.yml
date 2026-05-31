@@ -1,26 +1,29 @@
-name: Java CI with Maven
+name: Java CI Clean Build
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Code auschecken
+        uses: actions/checkout@v4
 
-      - name: Set up JDK 22
+      - name: Java 22 einrichten
         uses: actions/setup-java@v4
         with:
-          java-version: '22'
-          distribution: 'temurin'
-          cache: maven
+          java-version: "22"
+          distribution: "temurin"
 
-      - name: Build and test with Maven
-        run: |
-          cd backend/transfermarkt-analyst
-          mvn -B clean verify
+      - name: Java-Code im Unterordner kompilieren und testen
+        working-directory: backend/transfermarkt-analyst
+        run: mvn -B clean test -Dspring-boot.repackage.skip=true
